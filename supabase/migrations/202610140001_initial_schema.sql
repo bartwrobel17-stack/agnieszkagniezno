@@ -237,7 +237,7 @@ create policy "Profiles update own" on public.profiles for update to authenticat
 create policy "Profiles insert own" on public.profiles for insert to authenticated with check (id = (select auth.uid()));
 create policy "Active salons public read" on public.salons for select to anon, authenticated using (is_active or public.is_salon_member(id) or public.is_platform_admin());
 create policy "Salon managers update salon" on public.salons for update to authenticated using (public.is_salon_member(id, array['owner','manager']::public.member_role[]) or public.is_platform_admin()) with check (public.is_salon_member(id, array['owner','manager']::public.member_role[]) or public.is_platform_admin());
-create policy "Salon owners create salon" on public.salons for insert to authenticated with check (true);
+-- Salon creation is intentionally closed until a trusted onboarding RPC provisions both salon and owner membership.
 create policy "Members visible to salon" on public.salon_members for select to anon, authenticated using (exists(select 1 from public.salons s where s.id = salon_id and s.is_active) or public.is_salon_member(salon_id) or public.is_platform_admin());
 create policy "Managers manage members" on public.salon_members for all to authenticated using (public.is_salon_member(salon_id, array['owner','manager']::public.member_role[]) or public.is_platform_admin()) with check (public.is_salon_member(salon_id, array['owner','manager']::public.member_role[]) or public.is_platform_admin());
 create policy "Active services public read" on public.services for select to anon, authenticated using ((is_active and exists(select 1 from public.salons s where s.id = salon_id and s.is_active)) or public.is_salon_member(salon_id) or public.is_platform_admin());
@@ -251,7 +251,6 @@ create policy "Managers manage time off" on public.time_off for all to authentic
 create policy "Members read blocked slots" on public.blocked_slots for select to authenticated using (public.is_salon_member(salon_id) or public.is_platform_admin());
 create policy "Managers manage blocked slots" on public.blocked_slots for all to authenticated using (public.is_salon_member(salon_id, array['owner','manager']::public.member_role[]) or public.is_platform_admin()) with check (public.is_salon_member(salon_id, array['owner','manager']::public.member_role[]) or public.is_platform_admin());
 create policy "Customers and salon members read appointments" on public.appointments for select to authenticated using (customer_id = (select auth.uid()) or public.is_salon_member(salon_id) or public.is_platform_admin());
-create policy "Customers request appointments" on public.appointments for insert to authenticated with check (customer_id = (select auth.uid()) and exists(select 1 from public.services s where s.id = service_id and s.salon_id = appointments.salon_id and s.is_active) and public.is_salon_member(salon_id, array['staff','manager','owner']::public.member_role[]));
 create policy "Customers cancel own pending appointments" on public.appointments for update to authenticated using (customer_id = (select auth.uid()) and status in ('pending','confirmed')) with check (customer_id = (select auth.uid()) and status = 'cancelled');
 create policy "Salon members manage appointments" on public.appointments for update to authenticated using (public.is_salon_member(salon_id) or public.is_platform_admin()) with check (public.is_salon_member(salon_id) or public.is_platform_admin());
 create policy "Customers and salon members read payments" on public.payments for select to authenticated using (exists(select 1 from public.appointments a where a.id = appointment_id and (a.customer_id = (select auth.uid()) or public.is_salon_member(a.salon_id))) or public.is_platform_admin());
@@ -264,5 +263,4 @@ create policy "Members read notification logs" on public.notification_logs for s
 create policy "Only platform admins read admin roles" on public.platform_admins for select to authenticated using (user_id = (select auth.uid()) or public.is_platform_admin());
 create policy "Platform admins audit log read" on public.admin_audit_log for select to authenticated using (public.is_platform_admin());
 
--- Important: create appointments only through a server-side transactional RPC before enabling production booking.
--- The policies above are tenant-scoped, but do not by themselves prevent overlapping appointments.
+-- Important: direct appointment inserts are disabled. Add a trusted transactional RPC that validates staff-service assignment, working hours, time off, buffers and overlaps before enabling booking.
